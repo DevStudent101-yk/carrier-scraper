@@ -1,39 +1,36 @@
 # src/config.py
 
-# Website (fill in Monday when site is back)
-BASE_URL = "https://your-client-site.com"
+# ── Fenderr URLs ──────────────────────────────
+FENDERR_SEARCH_URL = "https://app.fenderr.com/carrier-search?q={mc}"
 
-# ── Scraping ──────────────────────────────────
-MAX_RECORDS = None
+# ── MC Range to scan ──────────────────────────
 
-REQUEST_DELAY_MIN = 1.5
-REQUEST_DELAY_MAX = 3.5
+MC_RANGE_START = 1_780_000
+MC_RANGE_END   = 1_800_000
+TARGET_VALID_COUNT = 1000  # Start with 50 as a proof of concept
+
 
 # ── Filter conditions ─────────────────────────
-# MC must be at least 6 months old
-MIN_AGE_MONTHS = 6
+MIN_AGE_MONTHS = 2      # carrier must be at least 2 months old
+MAX_AGE_MONTHS = 12     # carrier must be no older than 12 months
 
-# Carrier must be active
 VALID_STATUS = "Active"
-
-# Carrier must be authorized
 VALID_AUTH_STATUS = "Authorized"
 
-# Only carriers with 1 driver (exact match)
-EXACT_DRIVERS = 1
-
-# Only carriers with 1 truck (exact match)
-EXACT_TRUCKS = 1
-
-# Hard rejection — ignore anything above this
 MAX_DRIVERS = 2
-MAX_TRUCKS = 2
+MAX_TRUCKS  = 2
+
+# ── Delays between requests (seconds) ────────
+REQUEST_DELAY_MIN = 2.0
+REQUEST_DELAY_MAX = 4.0
+
+# ── Retry settings ────────────────────────────
+MAX_RETRIES = 3
 
 # ── Output ────────────────────────────────────
-OUTPUT_DIR = "output"
+OUTPUT_DIR      = "output"
 OUTPUT_FILENAME = "valid_carriers"
 
-# ── Google Sheets ─────────────────────────────
-# You will fill these in during Step 7
-GOOGLE_SHEET_NAME = "Carrier Data"
-GOOGLE_CREDENTIALS_FILE = "credentials.json"
+# ── Google Sheets (fill in later) ────────────
+GOOGLE_SHEET_NAME        = "Carrier Data"
+GOOGLE_CREDENTIALS_FILE  = "credentials.json"

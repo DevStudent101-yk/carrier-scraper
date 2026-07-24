@@ -1,142 +1,101 @@
-# main.py
+# main.py — FULL PRODUCTION SCRAPER
+
+from playwright.sync_api import sync_playwright
+from src.scraper import scrape_mc
 from src.processor import process_carriers
 from src.exporter import export_data
+from src.progress import save_progress, load_progress
+from src.config import MC_RANGE_START, MC_RANGE_END, TARGET_VALID_COUNT
+import time
 
-# ─────────────────────────────────────────────
-# MOCK DATA — Fake carrier records that look
-# exactly like real scraped data from the site.
-# Some will pass filters, some will be rejected.
-# ─────────────────────────────────────────────
 
-mock_data = [
-    {
-        # ✅ SHOULD PASS — Active, Authorized, 1 driver, 1 truck, old enough
-        "mc_number": "MC-100001",
-        "issuance_date": "01/01/2024",
-        "phone": "555-101-0001",
-        "email": "carrier1@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ✅ SHOULD PASS
-        "mc_number": "MC-100002",
-        "issuance_date": "03/15/2023",
-        "phone": "555-101-0002",
-        "email": "carrier2@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — status is Inactive
-        "mc_number": "MC-100003",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0003",
-        "email": "carrier3@email.com",
-        "status": "Inactive",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — not Authorized
-        "mc_number": "MC-100004",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0004",
-        "email": "carrier4@email.com",
-        "status": "Active",
-        "auth_status": "Not Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — too new, only 2 months old
-        "mc_number": "MC-100005",
-        "issuance_date": "04/01/2026",
-        "phone": "555-101-0005",
-        "email": "carrier5@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — 3 trucks, too many
-        "mc_number": "MC-100006",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0006",
-        "email": "carrier6@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "3",
-    },
-    {
-        # ❌ FAIL — 3 drivers, too many
-        "mc_number": "MC-100007",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0007",
-        "email": "carrier7@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "3",
-        "num_trucks": "1",
-    },
-    {
-        # ✅ SHOULD PASS
-        "mc_number": "MC-100008",
-        "issuance_date": "06/20/2023",
-        "phone": "555-101-0008",
-        "email": "carrier8@email.com",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — missing email
-        "mc_number": "MC-100009",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0009",
-        "email": "",
-        "status": "Active",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "1",
-    },
-    {
-        # ❌ FAIL — Inactive and too many trucks
-        "mc_number": "MC-100010",
-        "issuance_date": "01/10/2024",
-        "phone": "555-101-0010",
-        "email": "carrier10@email.com",
-        "status": "Inactive",
-        "auth_status": "Authorized",
-        "num_drivers": "1",
-        "num_trucks": "4",
-    },
-]
+def run():
+    # Load saved progress
+    progress = load_progress()
+    last_mc = progress["last_mc"]
+    valid_count = progress["valid_count"]
+    processed_count = progress["processed_count"]
+
+    if last_mc > 0:
+        print(f"[Resume] Continuing from MC {last_mc + 1}")
+        print(f"[Resume] Valid so far: {valid_count} | Processed: {processed_count}")
+    else:
+        print(f"[Start] Scanning MC {MC_RANGE_START} → {MC_RANGE_END}")
+        print(f"[Start] Target: {TARGET_VALID_COUNT} valid carriers")
+
+    all_valid_records = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp("http://localhost:9222")
+        context = browser.contexts[0]
+        page = context.pages[0]
+
+        input("\nMake sure Chrome is open on Fenderr, then press Enter...")
+        print("\n[Scraper] Running...\n")
+
+        for mc in range(max(MC_RANGE_START, last_mc + 1), MC_RANGE_END + 1):
+
+            # Stop when target reached
+            if valid_count >= TARGET_VALID_COUNT:
+                print(f"\n[Done] Target of {TARGET_VALID_COUNT} valid carriers reached!")
+                break
+
+            processed_count += 1
+
+            # Progress report every 20 MCs
+            if processed_count % 20 == 0:
+                print(f"\n[Progress] Processed: {processed_count} | "
+                      f"Valid: {valid_count} | Current MC: {mc}\n")
+
+            # Scrape this MC number
+            result = scrape_mc(page, mc)
+
+            if result:
+                print(f"  MC {mc} | Status: {result['status']} | "
+                      f"Drivers: {result['num_drivers']} | "
+                      f"Trucks: {result['num_trucks']} | "
+                      f"MCS: {result['mcs_date']}")
+
+                # Quick reject — skip Inactive immediately
+                if result["status"].lower() != "active":
+                    save_progress(mc, valid_count, processed_count)
+                    time.sleep(1.5)
+                    continue
+
+                # Run through full filter pipeline
+                valid_df = process_carriers([result])
+
+                if not valid_df.empty:
+                    valid_count += 1
+                    all_valid_records.append(result)
+
+                    print(f"\n  ✅ VALID #{valid_count}: {result['company_name']}")
+                    print(f"     MC: {mc} | Phone: {result['phone']} | "
+                          f"Drivers: {result['num_drivers']} | "
+                          f"Trucks: {result['num_trucks']} | "
+                          f"MCS: {result['mcs_date']}\n")
+
+                    # Save every 10 valid records
+                    if valid_count % 100 == 0:
+                        df = process_carriers(all_valid_records)
+                        export_data(df)
+                        print(f"[Export] Checkpoint saved — {valid_count} valid records")
+
+            save_progress(mc, valid_count, processed_count)
+            time.sleep(2)
+
+        # Final export
+        print(f"\n[Final] {valid_count} valid carriers found "
+              f"from {processed_count} MCs processed")
+
+        if all_valid_records:
+            df = process_carriers(all_valid_records)
+            export_data(df)
+            print("\n--- VALID CARRIERS ---")
+            print(df.to_string(index=False))
+        else:
+            print("No valid carriers found in this run.")
+
 
 if __name__ == "__main__":
-    print("=" * 45)
-    print("   CARRIER SCRAPER — PIPELINE TEST")
-    print("=" * 45)
-
-    # Step 1 — Process and filter
-    print("\n[Step 1] Running processor...")
-    valid_df = process_carriers(mock_data)
-
-    # Step 2 — Export to CSV and Excel
-    print("\n[Step 2] Running exporter...")
-    export_data(valid_df)
-
-    # Step 3 — Preview in terminal
-    print("\n[Step 3] Preview of valid records:")
-    print("-" * 45)
-    print(valid_df.to_string(index=False))
-    print("-" * 45)
-    print("\n✅ Pipeline test complete")
+    run()
